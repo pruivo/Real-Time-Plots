@@ -33,6 +33,7 @@ if ($dir = opendir($folder)) {
 	   $newLine = str_replace(' ', '', trim($line));
 	   $array = split(",", $newLine);
 	   foreach ($array as $key => $value) {
+	      echo $value."..";
 	      if ($value == $parameter) {
 	         $paramIdx = $key;
 	         break;
@@ -44,11 +45,21 @@ if ($dir = opendir($folder)) {
 	      $line = fgets($handle);
 	      $newLine = str_replace(' ', '', trim($line));
 	      $array = split(",", $newLine);
+	      
+         if ($array[$paramIdx] == "") {
+            continue;
+         }
+         
 	      $sum[$array[0]] += $array[$paramIdx];
-			if ($array[0] !== "") {$perFileObservation = $array[0];}
+			if ($array[0] !== "") {
+			   $perFileObservation = $array[0];
+         }
 	   }
-	   if ($minObservation == -1) {$minObservation = $perFileObservation;}
-	   else if ($minObservation > $perFileObservation) {$minObservation = $perFileObservation;}
+	   if ($minObservation == -1) {
+	      $minObservation = $perFileObservation;
+      } else if ($minObservation > $perFileObservation) {
+         $minObservation = $perFileObservation;
+      }
 	
 	   $numOfFiles++;
 	   fclose($handle);

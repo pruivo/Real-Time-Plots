@@ -22,12 +22,19 @@
    <?php
       $folder = "files";
 
-      if (isset($_REQUEST['app'])) {
-         $folder = $_REQUEST['app'];
+      if (isset($_REQUEST['apps'])) {
+         $folder = $_REQUEST['apps'];
       }   	
-         	
+      
       echo '<script type="text/javascript">';
       echo 'var folder = "' . $folder . '";';
+      echo 'var folderArray = [';
+      $array = split(",", $folder);
+      echo '"'.$array[0].'"';      
+      for ($idx = 1; $idx < count($array); ++$idx) {
+         echo ',"'.$array[$idx].'"'; 
+      }
+      echo '];';
       echo '</script>';
    ?>
 </head>
@@ -92,24 +99,48 @@
       
       var throughput_options = {
          series: { shadowSize: 0 }, // drawing is faster without shadows
-         yaxis: { min: 0, max: 1000},
+         yaxis: { min: 0 },
+         xaxis: { min: 0 }
+      };      
+          
+      var commit_latency_options = {
+         series: { shadowSize: 0 }, // drawing is faster without shadows
+         yaxis: { transform: function (v) { if (v == 0) return 0; return Math.log(v); }, 
+                  inverseTransform: function (v) { if (v == 0) return 0; return Math.exp(v);}, 
+                  ticks: function logTickGenerator(axis) {
+                        var res = [], v = 100;                  
+                        do {
+                         v = v * 10;
+                         res.push(v);                   
+                        } while (v < axis.max);
+                        
+                        return res;
+                  }},
          xaxis: { min: 0 }
       };
       
       function updatePlot(div, param, avg, options) {
          $.ajax({
-         url: "get-data.php?param=" + param + "&avg=" + avg + "&folder=" + folder,
+         url: "get-multiple-data.php?param=" + param + "&avg=" + avg + "&folder=" + folder,
          method: 'GET',
          dataType: 'text',
-         success: function(text) {
-            var lines = text.split("\n");
-            var data = [];
+         success: function(text) {                     
+            var lines = text.split("\n");            
+            var allData = [];
+            var dataIdx = 0;
+            var dataObj = { data: [], color: dataIdx, label: folderArray[dataIdx++]}            
             for(var i = 0, j = 0; i < lines.length; i++) {
+               if (lines[i] == ".") {
+                  allData.push(dataObj);               
+                  dataObj = { data: [] , color: dataIdx, label: folderArray[dataIdx++]};                  
+                  j = 0;
+                  continue;
+               }
                var keyValue = lines[i].split("|");
                if (keyValue[0] == "" || keyValue[1] == "") continue;
-               data[j++] = new Array(keyValue[0],keyValue[1]);
-            }
-            $.plot($("#" + div), [ data ], options);
+               dataObj.data[j++] = new Array(keyValue[0],keyValue[1]);
+            }            
+            $.plot($("#" + div), allData, options);
          }
          });
       }
@@ -120,7 +151,7 @@
          updatePlot("cpu", "CPU", "true", percentage_options);
          updatePlot("memory", "Memory.Usage", "true", default_options);
          updatePlot("wrtPer", "PercentageWriteTransactions", "true", percentage_options);
-         updatePlot("commitLatency", "CommitLatency", "true", default_options);
+         updatePlot("commitLatency", "CommitLatency", "true", commit_latency_options);
          setTimeout(update, updateInterval);
       }
       

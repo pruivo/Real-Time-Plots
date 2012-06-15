@@ -6,9 +6,9 @@
    <script src="js/jquery.js" type="text/javascript"></script>
    <script src="js/jquery.flot.js" type="text/javascript"></script>
    <!--script src="js/jquery.colorhelpers.js" type="text/javascript"></script>
-   <script src="js/jquery.flot.categories.js" type="text/javascript"></script>
+   <script src="js/jquery.flot.categories.js" type="text/javascript"></script-->
    <script src="js/jquery.flot.crosshair.js" type="text/javascript"></script>
-   <script src="js/jquery.flot.fillbetween.js" type="text/javascript"></script>
+   <!--script src="js/jquery.flot.fillbetween.js" type="text/javascript"></script>
    <script src="js/jquery.flot.image.js" type="text/javascript"></script>   
    <script src="js/jquery.flot.navigate.js" type="text/javascript"></script>
    <script src="js/jquery.flot.pie.js" type="text/javascript"></script>
@@ -22,12 +22,19 @@
    <?php
       $folder = "files";
 
-      if (isset($_REQUEST['app'])) {
-         $folder = $_REQUEST['app'];
+      if (isset($_REQUEST['apps'])) {
+         $folder = $_REQUEST['apps'];
       }   	
-         	
+      
       echo '<script type="text/javascript">';
       echo 'var folder = "' . $folder . '";';
+      echo 'var folderArray = [';
+      $array = split(",", $folder);
+      echo '"'.$array[0].'"';      
+      for ($idx = 1; $idx < count($array); ++$idx) {
+         echo ',"'.$array[$idx].'"'; 
+      }
+      echo '];';
       echo '</script>';
    ?>
 </head>
@@ -81,50 +88,99 @@
       var default_options = {
          series: { shadowSize: 0 }, // drawing is faster without shadows
          yaxis: { min: 0 },
-         xaxis: { min: 0 }
+         xaxis: { min: 0 },
+         crosshair: { mode: "x" },
+         grid: { hoverable: true, autoHighlight: false }
       };
       
       var percentage_options = {
          series: { shadowSize: 0 }, // drawing is faster without shadows
          yaxis: { min: 0, max: 1.1},
-         xaxis: { min: 0 }
+         xaxis: { min: 0 },
+         crosshair: { mode: "x" },
+         grid: { hoverable: true, autoHighlight: false }
       };
       
       var throughput_options = {
          series: { shadowSize: 0 }, // drawing is faster without shadows
-         yaxis: { min: 0, max: 1000},
-         xaxis: { min: 0 }
+         yaxis: { min: 0 },
+         xaxis: { min: 0 },
+         crosshair: { mode: "x" },
+         grid: { hoverable: true, autoHighlight: false }
       };
       
-      function updatePlot(div, param, avg, options) {
-         $.ajax({
-         url: "get-data.php?param=" + param + "&avg=" + avg + "&folder=" + folder,
-         method: 'GET',
-         dataType: 'text',
-         success: function(text) {
-            var lines = text.split("\n");
-            var data = [];
-            for(var i = 0, j = 0; i < lines.length; i++) {
-               var keyValue = lines[i].split("|");
-               if (keyValue[0] == "" || keyValue[1] == "") continue;
-               data[j++] = new Array(keyValue[0],keyValue[1]);
+      var plots = [];
+      
+      function bind(plotId) {
+         $("#" + plotId).bind("plothover",  function (event, pos, item) {
+            var plot = plots[plotId];
+            var axes = plot.getAxes();
+            if (pos.x < axes.xaxis.min || pos.x > axes.xaxis.max ||
+                pos.y < axes.yaxis.min || pos.y > axes.yaxis.max)
+               return;
+
+            var legends = $("#" + plotId + " .legendLabel");
+                legends.each(function () {
+                    // fix the widths so they don't jump around
+                    $(this).css('width', $(this).width());
+                });
+            
+            var i, j, dataset = plot.getData();
+            for (i = 0; i < dataset.length; ++i) {
+               var series = dataset[i];
+               
+               // find the nearest points, x-wise
+               for (j = 0; j < series.data.length; ++j)
+                  if (series.data[j][0] > pos.x)
+                     break;
+               
+               // now interpolate
+               var y, p1 = series.data[j - 1], p2 = series.data[j];
+               if (p1 == null)
+                  y = p2[1];
+               else if (p2 == null)
+                  y = p1[1];
+               else
+                  y = p1[1] + (p2[1] - p1[1]) * (pos.x - p1[0]) / (p2[0] - p1[0]);
+               
+               legends.eq(i).text(series.label.replace(/=.*/, "= " + (y).toFixed(2)));
             }
-            $.plot($("#" + div), [ data ], options);
-         }
          });
       }
       
-      function update() {
-         updatePlot("throughput", "Throughput", "false", throughput_options);
-         updatePlot("abortRate", "AbortRate", "true", percentage_options);
-         updatePlot("cpu", "CPU", "true", percentage_options);
-         updatePlot("memory", "Memory.Usage", "true", default_options);
-         updatePlot("wrtPer", "PercentageWriteTransactions", "true", percentage_options);
-         updatePlot("commitLatency", "CommitLatency", "true", default_options);
-         setTimeout(update, updateInterval);
+      function updatePlot(div, param, avg, options) {
+         $.ajax({
+         url: "get-multiple-data.php?param=" + param + "&avg=" + avg + "&folder=" + folder,
+         method: 'GET',
+         dataType: 'text',
+         success: function(text) {                     
+            var lines = text.split("\n");            
+            var allData = [];
+            var dataIdx = 0;
+            var dataObj = { data: [], color: dataIdx, label: folderArray[dataIdx++] + "= 0      "}            
+            for(var i = 0, j = 0; i < lines.length; i++) {
+               if (lines[i] == ".") {
+                  allData.push(dataObj);               
+                  dataObj = { data: [] , color: dataIdx, label: folderArray[dataIdx++] + "= 0      "}                  
+                  j = 0;
+                  continue;
+               }
+               var keyValue = lines[i].split("|");
+               if (keyValue[0] == "" || keyValue[1] == "") continue;
+               dataObj.data[j++] = new Array(Number(keyValue[0]),Number(keyValue[1]));
+            }            
+            plots[div] = $.plot($("#" + div), allData, options);
+            bind(div);
+         }
+         });
       }
-      
-      update();
+            
+      updatePlot("throughput", "Throughput", "false", throughput_options);
+      updatePlot("abortRate", "AbortRate", "true", percentage_options);
+      updatePlot("cpu", "CPU", "true", percentage_options);
+      updatePlot("memory", "Memory.Usage", "true", default_options);
+      updatePlot("wrtPer", "PercentageWriteTransactions", "true", percentage_options);
+      updatePlot("commitLatency", "CommitLatency", "true", default_options);                                 
    });
 </script>
 </body>
